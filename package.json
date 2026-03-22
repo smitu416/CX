@@ -1,0 +1,18 @@
+{
+  "name": "voc-dashboard",
+  "version": "1.0.0",
+  "description": "顧客の声（VoC）分析ダッシュボード",
+  "private": true,
+  "scripts": {
+    "dev": "serve . -l 3000 --no-clipboard",
+    "start": "python3 -m http.server 8080",
+    "lint": "echo 'No linter configured yet'",
+    "build": "echo 'Static project — no build step required'"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoC 分析ダッシュボード</title>
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- SheetJS CDN -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+/* ===================== リセット・ベーススタイル ===================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+  font-size: 14px;
+}
+/* ===================== ヘッダー ===================== */
+.header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border-bottom: 1px solid rgba(6,182,212,0.3);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-title { font-size: 20px; font-weight: 700; color: #06b6d4; letter-spacing: 0.05em; }
+.header-subtitle { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+/* XLSXアップロードボタン */
+.upload-btn {
+  background: rgba(6,182,212,0.15);
+  border: 1px solid #06b6d4;
+  color: #06b6d4;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.upload-btn:hover { background: rgba(6,182,212,0.3); }
+#file-input { display: none; }
+/* ===================== タブナビ ===================== */
+.tab-nav {
+  display: flex;
+  background: #1e293b;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 0 24px;
+  gap: 4px;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 14px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+  top: 1px;
+}
+.tab-btn:hover { color: #e2e8f0; }
+.tab-btn.active { color: #06b6d4; border-bottom-color: #06b6d4; }
+/* ===================== コンテンツエリア ===================== */
+.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+/* ===================== カード・パネル共通 ===================== */
+.card {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 20px;
+}
+/* ===================== KPIカード ===================== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: linear-gradient(135deg, #1e293b 0%, #243047 100%);
+  border: 1px solid rgba(6,182,212,0.2);
+  border-radius: 12px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #06b6d4, #0891b2);
+}
+.kpi-label { font-size: 12px; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi-value { font-size: 32px; font-weight: 700; color: #06b6d4; line-height: 1; }
+.kpi-sub { font-size: 12px; color: #64748b; margin-top: 6px; }
+/* ===================== グラフグリッド ===================== */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.chart-card {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 20px;
+}
+.chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.chart-wrap { position: relative; height: 220px; }
+/* ===================== ヒートマップ ===================== */
+.heatmap-wrap { overflow-x: auto; margin-top: 8px; }
+.heatmap-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.heatmap-table th, .heatmap-table td {
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+.heatmap-table th { background: #243047; color: #94a3b8; font-weight: 600; }
+.heatmap-table td.product-name { text-align: left; color: #e2e8f0; background: #1a2540; font-weight: 500; }
+/* ===================== 潜在ニーズタブ ===================== */
+.matrix-wrap { overflow-x: auto; }
+.matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.matrix-table th, .matrix-table td {
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 10px 12px;
+  text-align: center;
+}
+.matrix-table th { background: #243047; color: #94a3b8; font-weight: 600; }
+.matrix-table td.row-header { text-align: left; background: #1a2540; color: #e2e8f0; font-weight: 500; }
+.matrix-table td.clickable { cursor: pointer; transition: filter 0.15s; }
+.matrix-table td.clickable:hover { filter: brightness(1.4); }
+/* WHYラダー */
+.why-ladder { display: flex; align-items: stretch; gap: 0; margin-top: 16px; }
+.why-step {
+  flex: 1;
+  background: #243047;
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 16px;
+  position: relative;
+  text-align: center;
+}
+.why-step:not(:last-child)::after {
+  content: '→';
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #06b6d4;
+  font-size: 18px;
+  z-index: 1;
+  background: #0f172a;
+  padding: 2px;
+}
+.why-step:first-child { border-radius: 12px 0 0 12px; }
+.why-step:last-child { border-radius: 0 12px 12px 0; }
+.why-step-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.why-step-value { font-size: 14px; font-weight: 600; color: #06b6d4; }
+/* 価値転換マップ */
+.value-map-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.value-map-table th, .value-map-table td {
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 12px 16px;
+  text-align: left;
+}
+.value-map-table th { background: #243047; color: #94a3b8; font-weight: 600; }
+.value-map-table tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+/* ===================== 課題管理タブ ===================== */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filter-bar select, .filter-bar input {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #e2e8f0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.filter-bar select:focus, .filter-bar input:focus { border-color: #06b6d4; }
+.filter-label { font-size: 12px; color: #64748b; }
+.issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+.issue-card {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+.issue-card:hover { border-color: rgba(6,182,212,0.3); }
+.issue-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.issue-card-id { font-size: 11px; color: #64748b; font-family: monospace; }
+.priority-badge {
+  background: rgba(6,182,212,0.2);
+  color: #06b6d4;
+  border: 1px solid rgba(6,182,212,0.4);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.priority-badge.high { background: rgba(239,68,68,0.2); color: #f87171; border-color: rgba(239,68,68,0.4); }
+.priority-badge.mid { background: rgba(245,158,11,0.2); color: #fbbf24; border-color: rgba(245,158,11,0.4); }
+.issue-card-name { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #e2e8f0; }
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.tag-category { background: rgba(139,92,246,0.2); color: #a78bfa; }
+.tag-emotion { background: rgba(6,182,212,0.15); color: #67e8f9; }
+.tag-value { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.tag-status-0 { background: rgba(239,68,68,0.15); color: #fca5a5; }
+.tag-status-1 { background: rgba(245,158,11,0.15); color: #fde68a; }
+.tag-status-2 { background: rgba(16,185,129,0.15); color: #86efac; }
+.issue-content-preview {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.6;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+.issue-content-preview:hover { color: #cbd5e1; }
+.issue-card-footer { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.status-btn {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.status-btn:hover { background: rgba(6,182,212,0.15); color: #06b6d4; border-color: #06b6d4; }
+.dept-input, .deadline-input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #e2e8f0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  outline: none;
+  width: 100px;
+}
+.dept-input:focus, .deadline-input:focus { border-color: #06b6d4; }
+.deadline-input { width: 120px; }
+/* ===================== データ一覧タブ ===================== */
+.search-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-input {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #e2e8f0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  min-width: 240px;
+}
+.search-input:focus { border-color: #06b6d4; }
+.data-table-wrap { overflow-x: auto; }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.data-table th {
+  background: #243047;
+  color: #94a3b8;
+  font-weight: 600;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  vertical-align: top;
+}
+.data-table tr:hover td { background: rgba(255,255,255,0.03); }
+.detail-btn {
+  background: rgba(6,182,212,0.1);
+  border: 1px solid rgba(6,182,212,0.3);
+  color: #06b6d4;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.detail-btn:hover { background: rgba(6,182,212,0.25); }
+/* ===================== モーダル ===================== */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: #1e293b;
+  border: 1px solid rgba(6,182,212,0.3);
+  border-radius: 16px;
+  padding: 28px;
+  width: 100%;
+  max-width: 760px;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-close:hover { color: #e2e8f0; }
+.modal-title { font-size: 16px; font-weight: 700; color: #06b6d4; margin-bottom: 16px; padding-right: 32px; }
+.modal-content { font-size: 13px; color: #cbd5e1; line-height: 1.8; white-space: pre-wrap; word-break: break-all; }
+.modal-list-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.modal-list-table th, .modal-list-table td {
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 8px 10px;
+  text-align: left;
+}
+.modal-list-table th { background: #243047; color: #94a3b8; }
+/* ===================== トースト通知 ===================== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #06b6d4;
+  color: #0f172a;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  z-index: 2000;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: all 0.3s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+/* ===================== ユーティリティ ===================== */
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+select option { background: #1e293b; }
+.empty-state { text-align: center; padding: 40px; color: #64748b; }
+.region-filter-select {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 12px;
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== ヘッダー ===================== -->
+<header class="header">
+  <div>
+    <div class="header-title">VoC 分析ダッシュボード</div>
+    <div class="header-subtitle">顧客の声を意思決定・行動へ接続するインフラ</div>
+  </div>
+  <div class="header-right">
+    <label class="upload-btn" for="file-input">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      XLSXを読み込む
+    </label>
+    <input type="file" id="file-input" accept=".xlsx,.xls">
+  </div>
+</header>
+
+<!-- ===================== タブナビ ===================== -->
+<nav class="tab-nav">
+  <button class="tab-btn active" data-tab="dashboard">ダッシュボード</button>
+  <button class="tab-btn" data-tab="needs">潜在ニーズ分析</button>
+  <button class="tab-btn" data-tab="issues">課題管理</button>
+  <button class="tab-btn" data-tab="datalist">データ一覧</button>
+</nav>
+
+<!-- ===================== メインコンテンツ ===================== -->
+<main class="content">
+
+  <!-- ① ダッシュボードタブ -->
+  <section class="tab-panel active" id="tab-dashboard">
+    <!-- KPIカード -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+    <!-- グラフ -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="chart-title">内容分類別件数</div>
+        <div class="chart-wrap"><canvas id="chart-category"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">感情タグ分布</div>
+        <div class="chart-wrap"><canvas id="chart-emotion"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">相談方法別件数</div>
+        <div class="chart-wrap"><canvas id="chart-contact"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">相談者区分別件数</div>
+        <div class="chart-wrap"><canvas id="chart-customer"></canvas></div>
+      </div>
+    </div>
+    <!-- ヒートマップ -->
+    <div class="card">
+      <div class="section-title">製品（通称名）× 内容分類 ヒートマップ（上位10製品）</div>
+      <div class="heatmap-wrap" id="heatmap-area"></div>
+    </div>
+  </section>
+
+  <!-- ② 潜在ニーズ分析タブ -->
+  <section class="tab-panel" id="tab-needs">
+    <div class="two-col">
+      <!-- 内容分類 × 感情タグ マトリクス -->
+      <div class="card">
+        <div class="section-title">内容分類 × 感情タグ マトリクス（クリックで詳細）</div>
+        <div class="matrix-wrap" id="matrix-cat-emo"></div>
+      </div>
+      <!-- 発信地区 × 感情タグ マトリクス -->
+      <div class="card">
+        <div class="section-title">発信地区（上位8）× 感情タグ マトリクス</div>
+        <div class="matrix-wrap" id="matrix-region-emo"></div>
+      </div>
+    </div>
+    <!-- WHYラダー -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="section-title">WHYラダー分析</div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:12px;color:#94a3b8;margin-right:8px;">内容分類を選択：</label>
+        <select id="why-select" style="background:#243047;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;padding:6px 12px;border-radius:6px;font-size:13px;outline:none;">
+          <option value="製品">製品</option>
+          <option value="営業">営業</option>
+          <option value="サービス">サービス</option>
+          <option value="企業活動">企業活動</option>
+          <option value="部品">部品</option>
+          <option value="ＨＴＣ">ＨＴＣ</option>
+          <option value="他窓口誘導">他窓口誘導</option>
+          <option value="その他">その他</option>
+        </select>
+      </div>
+      <div class="why-ladder" id="why-ladder"></div>
+    </div>
+    <!-- 価値転換マップ -->
+    <div class="card">
+      <div class="section-title">価値転換マップ（感情タグ → 潜在価値へのブリッジ）</div>
+      <table class="value-map-table">
+        <thead>
+          <tr>
+            <th>感情タグ</th>
+            <th>顕在不満・ニーズ</th>
+            <th>欠落価値</th>
+            <th>転換アイデア</th>
+          </tr>
+        </thead>
+        <tbody id="value-map-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ③ 課題管理タブ -->
+  <section class="tab-panel" id="tab-issues">
+    <!-- フィルター -->
+    <div class="filter-bar">
+      <div>
+        <div class="filter-label">内容分類</div>
+        <select id="issue-filter-cat" onchange="renderIssues()">
+          <option value="">すべて</option>
+        </select>
+      </div>
+      <div>
+        <div class="filter-label">感情タグ</div>
+        <select id="issue-filter-emo" onchange="renderIssues()">
+          <option value="">すべて</option>
+        </select>
+      </div>
+      <div>
+        <div class="filter-label">通称名</div>
+        <select id="issue-filter-name" onchange="renderIssues()">
+          <option value="">すべて</option>
+        </select>
+      </div>
+      <div>
+        <div class="filter-label">相談者区分1</div>
+        <select id="issue-filter-cust" onchange="renderIssues()">
+          <option value="">すべて</option>
+        </select>
+      </div>
+      <div>
+        <div class="filter-label">ステータス</div>
+        <select id="issue-filter-status" onchange="renderIssues()">
+          <option value="">すべて</option>
+          <option value="0">未対応</option>
+          <option value="1">対応中</option>
+          <option value="2">完了</option>
+        </select>
+      </div>
+    </div>
+    <div class="issue-grid" id="issue-grid"></div>
+  </section>
+
+  <!-- ④ データ一覧タブ -->
+  <section class="tab-panel" id="tab-datalist">
+    <div class="search-bar">
+      <input class="search-input" id="search-input" type="text" placeholder="フリーテキスト検索（相談内容・通称名）" oninput="renderDataTable()">
+      <select id="dl-filter-cat" onchange="renderDataTable()" style="background:#1e293b;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;outline:none;">
+        <option value="">内容分類：すべて</option>
+      </select>
+      <select id="dl-filter-emo" onchange="renderDataTable()" style="background:#1e293b;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;outline:none;">
+        <option value="">感情タグ：すべて</option>
+      </select>
+      <select id="dl-filter-cust" onchange="renderDataTable()" style="background:#1e293b;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;outline:none;">
+        <option value="">相談者区分1：すべて</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="data-table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>NO.</th>
+              <th>案件管理番号</th>
+              <th>内容分類</th>
+              <th>相談方法</th>
+              <th>製品区分</th>
+              <th>通称名</th>
+              <th>年式</th>
+              <th>感情タグ</th>
+              <th>潜在価値</th>
+              <th>相談者区分1</th>
+              <th>発信地区</th>
+              <th>ステータス</th>
+              <th>詳細</th>
+            </tr>
+          </thead>
+          <tbody id="data-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== モーダル：詳細表示 ===================== -->
+<div class="modal-overlay" id="modal-detail">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-detail')">&times;</button>
+    <div class="modal-title" id="modal-detail-title">相談内容</div>
+    <div class="modal-content" id="modal-detail-content"></div>
+  </div>
+</div>
+
+<!-- ===================== モーダル：マトリクス詳細 ===================== -->
+<div class="modal-overlay" id="modal-matrix">
+  <div class="modal-box" style="max-width:900px;">
+    <button class="modal-close" onclick="closeModal('modal-matrix')">&times;</button>
+    <div class="modal-title" id="modal-matrix-title">該当データ一覧</div>
+    <div id="modal-matrix-content"></div>
+  </div>
+</div>
+
+<!-- ===================== トースト ===================== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// サンプルデータ（12件以上、ホンダ製品、バランス良く分散）
+// ============================================================
+const SAMPLE_DATA = [
+  {
+    no: 1, caseId: 'H20250300001', category: '製品', contactMethod: 'インターネット',
+    productType: '４輪', productName: 'N-BOX', modelType: 'カスタム', modelYear: 2024,
+    content: '<標題>N-BOXのエンジン音が気になります\n<お問い合わせ内容>\nN-BOXを購入して3ヶ月になりますが、アイドリング時に普段と違うエンジン音がして不安です。ディーラーに相談すべきか心配しています。安全面での確認が取れると安心なのですが。',
+    customerType1: '既納客', customerType2: '', region: '東京都'
+  },
+  {
+    no: 2, caseId: 'H20250300002', category: '営業', contactMethod: 'フリーダイヤル',
+    productType: '４輪', productName: 'FREED', modelType: 'e:HEV X', modelYear: 2025,
+    content: '<標題>FREEDの納期について\n<お問い合わせ内容>\n先月FREEDのe:HEV Xを注文しましたが、いまだに納期の連絡がありません。もう少し早く情報を提供してほしいです。営業担当に何度か連絡しても折り返しがなく、ひどいと思います。',
+    customerType1: '潜在客', customerType2: '', region: '神奈川県'
+  },
+  {
+    no: 3, caseId: 'H20250300003', category: '製品', contactMethod: 'コネクテッド会員',
+    productType: '４輪', productName: 'CIVIC TYPE-R', modelType: 'TYPE-R', modelYear: 2024,
+    content: '<標題>CIVIC TYPE-Rのブレーキ性能について要望\n<お問い合わせ内容>\nCIVIC TYPE-Rに乗っていますが、サーキット走行時のブレーキフィールをもう少し改善してほしいです。スポーツカーとして更なる進化をお願いしたいです。また、ブレーキダストが多く日常使いで困っています。',
+    customerType1: '既納客', customerType2: '', region: '愛知県'
+  },
+  {
+    no: 4, caseId: 'H20250300004', category: 'サービス', contactMethod: 'フリーダイヤル',
+    productType: '４輪', productName: 'ACCORD', modelType: 'e:HEV EX', modelYear: 2023,
+    content: '<標題>ディーラーの対応に感謝\n<お問い合わせ内容>\nACCORDの定期点検でお世話になりました。担当の方がとても丁寧に説明してくださり、感謝しています。待ち時間もコーヒーを用意していただき、感動しました。ぜひこの品質を維持してほしいです。',
+    customerType1: '既納客', customerType2: '', region: '大阪府'
+  },
+  {
+    no: 5, caseId: 'H20250300005', category: '製品', contactMethod: 'インターネット',
+    productType: '４輪', productName: 'N-VAN', modelType: 'e:HEV', modelYear: 2025,
+    content: '<標題>N-VANの荷室改善提案\n<お問い合わせ内容>\n商用で使っているN-VANですが、荷室の固定フックが少なく荷物が動いて困っています。もっと荷室オプションを増やしてほしいという要望があります。法人ユーザー向けにもっと使いやすい仕様をお願いしたいです。',
+    customerType1: '既納客', customerType2: '', region: '埼玉県'
+  },
+  {
+    no: 6, caseId: 'H20250300006', category: '営業', contactMethod: 'ＨＴＣ会員',
+    productType: '４輪', productName: 'ZR-V', modelType: 'e:HEV X', modelYear: 2024,
+    content: '<標題>ZR-Vの購入を検討中\n<お問い合わせ内容>\nZR-Vの購入を考えています。他社のSUVと比較していますが、ホンダのe:HEV技術に期待しています。燃費と走行性能のバランスについて詳しく知りたいです。試乗できる機会があればお願いしたいです。',
+    customerType1: '潜在客', customerType2: '', region: '福岡県'
+  },
+  {
+    no: 7, caseId: 'H20250300007', category: '企業活動', contactMethod: 'インターネット',
+    productType: 'その他', productName: 'その他', modelType: '', modelYear: 2025,
+    content: '<標題>ホンダの環境への取り組みについて\n<お問い合わせ内容>\nホンダのカーボンニュートラルへの取り組みに関心があります。2050年に向けたロードマップをより積極的に公開してほしいです。企業として社会への説明責任を果たすことをお願いしたいと思います。',
+    customerType1: '官公庁・団体', customerType2: '協会・団体', region: '東京都'
+  },
+  {
+    no: 8, caseId: 'H20250300008', category: '部品', contactMethod: 'フリーダイヤル',
+    productType: '４輪', productName: 'N-BOX', modelType: 'タイプ共通', modelYear: 2022,
+    content: '<標題>N-BOXの純正部品の入手性について\n<お問い合わせ内容>\nN-BOXのリアバンパーを交換したいのですが、純正部品の入手まで2ヶ月以上かかると言われました。これは最悪の状況で、もっと在庫管理を改善してほしいです。事故修理で困っています。',
+    customerType1: '既納客', customerType2: '', region: '北海道'
+  },
+  {
+    no: 9, caseId: 'H20250300009', category: '製品', contactMethod: 'コネクテッド会員',
+    productType: '２輪', productName: 'CB1000R', modelType: 'ブラックエディション', modelYear: 2024,
+    content: '<標題>CB1000Rのコネクテッド機能について\n<お問い合わせ内容>\nCB1000Rのコネクテッド機能が非常に便利で毎日活用しています。特にナビ機能は感動するほど使いやすいです。ありがとうございます。今後はルート記録機能も追加してほしいです。',
+    customerType1: '既納客', customerType2: '', region: '愛知県'
+  },
+  {
+    no: 10, caseId: 'H20250300010', category: 'ＨＴＣ', contactMethod: 'ＨＴＣ会員',
+    productType: '４輪', productName: 'FREED', modelType: 'AIR', modelYear: 2024,
+    content: '<標題>HTC会員サービスの改善要望\n<お問い合わせ内容>\nHTC会員として長年利用していますが、ポイント還元率が低く残念に思っています。他社の会員サービスと比べると見劣りする部分があり、がっかりしました。優待サービスの拡充をお願いしたいです。',
+    customerType1: 'ＨＭ関係', customerType2: 'ホンダＯＢ', region: '静岡県'
+  },
+  {
+    no: 11, caseId: 'H20250300011', category: '製品', contactMethod: 'インターネット',
+    productType: '４輪', productName: 'STEPWGN', modelType: 'SPADA e:HEV', modelYear: 2025,
+    content: '<標題>STEPWGNの後席エンタメ機能を改善してほしい\n<お問い合わせ内容>\n家族でよく使うSTEPWGNですが、後席の子ども向けエンタメ機能が少ないです。後席モニターや充電ポートをもっと充実させてほしいです。ファミリーカーとしてのポテンシャルはあると思うのでお願いします。',
+    customerType1: '既納客', customerType2: '', region: '千葉県'
+  },
+  {
+    no: 12, caseId: 'H20250300012', category: 'サービス', contactMethod: 'フリーダイヤル',
+    productType: '４輪', productName: 'ACCORD', modelType: 'e:HEV EX', modelYear: 2023,
+    content: '<標題>オイル交換の費用が高い\n<お問い合わせ内容>\nACCORDのオイル交換をディーラーでお願いしたところ、他店より高額でした。せめて定期メンテナンスパックのような割引サービスがあると助かります。長年ホンダユーザーとして続けたいので改善をお願いします。',
+    customerType1: '既納客', customerType2: '', region: '大阪府'
+  },
+  {
+    no: 13, caseId: 'H20250300013', category: '他窓口誘導', contactMethod: 'インターネット',
+    productType: '４輪', productName: 'VEZEL', modelType: 'e:HEV Z', modelYear: 2024,
+    content: '<標題>VEZELの保険について\n<お問い合わせ内容>\nVEZELを購入予定ですが、自動車保険についても相談できますか。ホンダのディーラーで一括して手続きできると便利です。どこに問い合わせればいいか教えていただけますか。',
+    customerType1: '潜在客', customerType2: '', region: '京都府'
+  },
+  {
+    no: 14, caseId: 'H20250300014', category: '製品', contactMethod: 'フリーダイヤル',
+    productType: '４輪', productName: 'N-BOX', modelType: 'カスタム', modelYear: 2025,
+    content: '<標題>N-BOXの先進安全技術について不安\n<お問い合わせ内容>\nN-BOX 2025年式のホンダセンシングが時々誤作動します。前の車に急ブレーキをかけたり、車線逸脱の警告が頻繁に出て怖いです。安全システムの信頼性に不安を感じています。早急な対応をお願いします。',
+    customerType1: '既納客', customerType2: '', region: '神奈川県'
+  },
+  {
+    no: 15, caseId: 'H20250300015', category: '営業', contactMethod: 'ＨＴＣ会員',
+    productType: '４輪', productName: 'CIVIC', modelType: 'e:HEV', modelYear: 2025,
+    content: '<標題>CIVICの下取り価格に不満\n<お問い合わせ内容>\nCIVICの買い替えを検討していますが、現在のCIVICの下取り価格が低すぎて怒りを感じています。相場より大幅に低く、許せません。もっと適正な査定をしてほしいです。',
+    customerType1: '既納客', customerType2: '', region: '愛知県'
+  }
+];
+
+// ============================================================
+// グローバル状態
+// ============================================================
+let allData = [];           // 全データ（加工済み）
+let charts = {};            // Chart.jsインスタンス管理
+
+// ステータス定数
+const STATUS_LABELS = ['未対応', '対応中', '完了'];
+
+// ============================================================
+// 感情タグ自動付与
+// ============================================================
+function detectEmotion(text) {
+  if (!text) return '意見';
+  const t = text;
+  if (/不安|心配|怖い|困る/.test(t)) return '不安';
+  if (/怒|ひどい|最悪|不満|許せない/.test(t)) return '怒り';
+  if (/がっかり|期待して|残念/.test(t)) return '失望';
+  if (/嬉しい|ありがとう|感謝|感動/.test(t)) return '喜び';
+  if (/欲しい|お願い|改善|してほしい|して欲しい/.test(t)) return '要望';
+  return '意見';
+}
+
+// ============================================================
+// 潜在価値タグ自動付与
+// ============================================================
+function detectValue(category, emotion) {
+  if (category === '製品' && emotion === '不安') return '安心価値';
+  if (category === '製品' && emotion === '怒り') return '信頼価値';
+  if (category === '製品' && emotion === '要望') return '快適価値';
+  if (category === '営業' && emotion === '要望') return '入手価値';
+  if (category === 'サービス') return '対応価値';
+  if (emotion === '喜び') return 'ブランド価値';
+  return '情報価値';
+}
+
+// ============================================================
+// テキスト前処理（タグ除去）
+// ============================================================
+function cleanContent(text) {
+  if (!text) return '';
+  return text
+    .replace(/<標題>/g, '')
+    .replace(/<お問い合わせ内容>/g, '')
+    .replace(/\\n/g, '\n')
+    .trim();
+}
+
+// ============================================================
+// 影響度スコア（内容分類ベース）
+// ============================================================
+function getImpact(category) {
+  if (category === '製品' || category === 'サービス') return 5;
+  if (category === '営業' || category === '部品') return 4;
+  if (category === '企業活動') return 3;
+  return 2;
+}
+
+// ============================================================
+// 頻度スコア計算（通称名ごとの件数比率から1〜5に変換）
+// ============================================================
+function calcFrequencyScores(data) {
+  const counts = {};
+  data.forEach(d => { counts[d.productName] = (counts[d.productName] || 0) + 1; });
+  const maxCount = Math.max(...Object.values(counts));
+  const scores = {};
+  Object.keys(counts).forEach(name => {
+    scores[name] = Math.max(1, Math.ceil((counts[name] / maxCount) * 5));
+  });
+  return scores;
+}
+
+// ============================================================
+// データ初期化・加工
+// ============================================================
+function processData(rawData) {
+  const freqScores = calcFrequencyScores(rawData);
+  return rawData.map((d, i) => {
+    const cleanedContent = cleanContent(d.content);
+    const emotion = detectEmotion(cleanedContent);
+    const latentValue = detectValue(d.category, emotion);
+    const impact = getImpact(d.category);
+    const freq = freqScores[d.productName] || 1;
+    return {
+      ...d,
+      cleanedContent,
+      emotion,
+      latentValue,
+      impact,
+      freq,
+      priorityScore: impact * freq,
+      status: d.status !== undefined ? d.status : 0,  // 0:未対応 1:対応中 2:完了
+      dept: d.dept || '',
+      deadline: d.deadline || ''
+    };
+  });
+}
+
+// ============================================================
+// カラー定義
+// ============================================================
+const EMOTION_COLORS = {
+  '不安': '#f59e0b', '怒り': '#ef4444', '失望': '#8b5cf6',
+  '喜び': '#10b981', '要望': '#06b6d4', '意見': '#94a3b8'
+};
+const CATEGORY_COLORS = ['#06b6d4','#0891b2','#0284c7','#2563eb','#7c3aed','#db2777','#dc2626','#d97706'];
+
+// ============================================================
+// カウント集計ユーティリティ
+// ============================================================
+function countBy(data, key) {
+  const result = {};
+  data.forEach(d => {
+    const v = d[key] || 'その他';
+    result[v] = (result[v] || 0) + 1;
+  });
+  return result;
+}
+
+// ============================================================
+// KPIカード描画
+// ============================================================
+function renderKPI(data) {
+  const catCounts = countBy(data, 'category');
+  const topCat = Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0] || ['―', 0];
+  const nameCounts = countBy(data, 'productName');
+  const topName = Object.entries(nameCounts).sort((a,b)=>b[1]-a[1])[0] || ['―', 0];
+  const unhandled = data.filter(d => d.status === 0).length;
+
+  const kpis = [
+    { label: '総件数', value: data.length, sub: 'VoC データ合計' },
+    { label: '未対応件数', value: unhandled, sub: `対応中：${data.filter(d=>d.status===1).length}件　完了：${data.filter(d=>d.status===2).length}件` },
+    { label: '最多カテゴリ', value: topCat[0], sub: `${topCat[1]}件` },
+    { label: 'トップ製品', value: topName[0], sub: `${topName[1]}件` }
+  ];
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" style="font-size:${typeof k.value==='number'?'32':'20'}px">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// Chart.js グラフ描画
+// ============================================================
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function renderCharts(data) {
+  // 内容分類別件数（横棒）
+  destroyChart('cat');
+  const catCounts = countBy(data, 'category');
+  const catEntries = Object.entries(catCounts).sort((a,b)=>b[1]-a[1]);
+  charts['cat'] = new Chart(document.getElementById('chart-category'), {
+    type: 'bar',
+    data: {
+      labels: catEntries.map(e=>e[0]),
+      datasets: [{ data: catEntries.map(e=>e[1]), backgroundColor: CATEGORY_COLORS, borderRadius: 4 }]
+    },
+    options: chartOptions('horizontal')
+  });
+
+  // 感情タグ分布（ドーナツ）
+  destroyChart('emo');
+  const emoCounts = countBy(data, 'emotion');
+  const emoEntries = Object.entries(emoCounts);
+  charts['emo'] = new Chart(document.getElementById('chart-emotion'), {
+    type: 'doughnut',
+    data: {
+      labels: emoEntries.map(e=>e[0]),
+      datasets: [{ data: emoEntries.map(e=>e[1]), backgroundColor: emoEntries.map(e=>EMOTION_COLORS[e[0]]||'#94a3b8'), borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 12 }, padding: 8 } } }
+    }
+  });
+
+  // 相談方法別件数（横棒）
+  destroyChart('contact');
+  const contactCounts = countBy(data, 'contactMethod');
+  const contactEntries = Object.entries(contactCounts).sort((a,b)=>b[1]-a[1]);
+  charts['contact'] = new Chart(document.getElementById('chart-contact'), {
+    type: 'bar',
+    data: {
+      labels: contactEntries.map(e=>e[0]),
+      datasets: [{ data: contactEntries.map(e=>e[1]), backgroundColor: '#0891b2', borderRadius: 4 }]
+    },
+    options: chartOptions('horizontal')
+  });
+
+  // 相談者区分1別件数（横棒）
+  destroyChart('cust');
+  const custCounts = countBy(data, 'customerType1');
+  const custEntries = Object.entries(custCounts).sort((a,b)=>b[1]-a[1]);
+  charts['cust'] = new Chart(document.getElementById('chart-customer'), {
+    type: 'bar',
+    data: {
+      labels: custEntries.map(e=>e[0]),
+      datasets: [{ data: custEntries.map(e=>e[1]), backgroundColor: '#7c3aed', borderRadius: 4 }]
+    },
+    options: chartOptions('horizontal')
+  });
+}
+
+function chartOptions(direction) {
+  const isHorizontal = direction === 'horizontal';
+  return {
+    indexAxis: isHorizontal ? 'y' : 'x',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: '#1e293b', titleColor: '#94a3b8', bodyColor: '#e2e8f0', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 }
+    },
+    scales: {
+      x: { ticks: { color: '#64748b', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+    }
+  };
+}
+
+// ============================================================
+// ヒートマップ（製品 × 内容分類）
+// ============================================================
+function renderHeatmap(data) {
+  // 上位10製品
+  const nameCounts = countBy(data, 'productName');
+  const top10 = Object.entries(nameCounts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(e=>e[0]);
+  const categories = [...new Set(data.map(d=>d.category))];
+  const filtered = data.filter(d => top10.includes(d.productName));
+
+  // 集計
+  const matrix = {};
+  top10.forEach(n => { matrix[n] = {}; categories.forEach(c => { matrix[n][c] = 0; }); });
+  filtered.forEach(d => { if(matrix[d.productName]) matrix[d.productName][d.category] = (matrix[d.productName][d.category]||0)+1; });
+
+  const maxVal = Math.max(...top10.flatMap(n => categories.map(c => matrix[n][c])));
+
+  let html = `<table class="heatmap-table"><thead><tr><th>通称名</th>`;
+  categories.forEach(c => { html += `<th>${c}</th>`; });
+  html += `</tr></thead><tbody>`;
+  top10.forEach(name => {
+    html += `<tr><td class="product-name">${name}</td>`;
+    categories.forEach(c => {
+      const v = matrix[name][c] || 0;
+      const intensity = maxVal > 0 ? v / maxVal : 0;
+      const alpha = v > 0 ? 0.15 + intensity * 0.75 : 0;
+      const textColor = intensity > 0.5 ? '#0f172a' : '#e2e8f0';
+      html += `<td style="background:rgba(6,182,212,${alpha.toFixed(2)});color:${textColor}">${v > 0 ? v : ''}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  document.getElementById('heatmap-area').innerHTML = html;
+}
+
+// ============================================================
+// 潜在ニーズ：内容分類 × 感情タグ マトリクス
+// ============================================================
+function renderMatrixCatEmo(data) {
+  const categories = [...new Set(data.map(d=>d.category))];
+  const emotions = ['不安','怒り','失望','喜び','要望','意見'];
+
+  const matrix = {};
+  categories.forEach(c => { matrix[c] = {}; emotions.forEach(e => { matrix[c][e] = 0; }); });
+  data.forEach(d => { if(matrix[d.category]) matrix[d.category][d.emotion] = (matrix[d.category][d.emotion]||0)+1; });
+
+  const maxVal = Math.max(...categories.flatMap(c => emotions.map(e => matrix[c][e])));
+
+  let html = `<table class="matrix-table"><thead><tr><th>内容分類</th>`;
+  emotions.forEach(e => { html += `<th>${e}</th>`; });
+  html += `</tr></thead><tbody>`;
+  categories.forEach(cat => {
+    html += `<tr><td class="row-header">${cat}</td>`;
+    emotions.forEach(emo => {
+      const v = matrix[cat][emo] || 0;
+      const intensity = maxVal > 0 ? v / maxVal : 0;
+      const alpha = v > 0 ? 0.15 + intensity * 0.75 : 0;
+      const textColor = intensity > 0.5 ? '#fff' : '#e2e8f0';
+      html += `<td class="clickable" style="background:rgba(239,68,68,${alpha.toFixed(2)});color:${textColor}"
+        onclick="showMatrixModal('${cat}','${emo}')">${v > 0 ? v : ''}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  document.getElementById('matrix-cat-emo').innerHTML = html;
+}
+
+// ============================================================
+// 潜在ニーズ：発信地区 × 感情タグ マトリクス
+// ============================================================
+function renderMatrixRegionEmo(data) {
+  const regionCounts = countBy(data, 'region');
+  const top8Regions = Object.entries(regionCounts).sort((a,b)=>b[1]-a[1]).slice(0,8).map(e=>e[0]);
+  const emotions = ['不安','怒り','失望','喜び','要望','意見'];
+
+  const matrix = {};
+  top8Regions.forEach(r => { matrix[r] = {}; emotions.forEach(e => { matrix[r][e] = 0; }); });
+  data.filter(d=>top8Regions.includes(d.region)).forEach(d => {
+    matrix[d.region][d.emotion] = (matrix[d.region][d.emotion]||0)+1;
+  });
+
+  const maxVal = Math.max(...top8Regions.flatMap(r => emotions.map(e => matrix[r][e])));
+
+  let html = `<table class="matrix-table"><thead><tr><th>発信地区</th>`;
+  emotions.forEach(e => { html += `<th>${e}</th>`; });
+  html += `</tr></thead><tbody>`;
+  top8Regions.forEach(region => {
+    html += `<tr><td class="row-header">${region}</td>`;
+    emotions.forEach(emo => {
+      const v = matrix[region][emo] || 0;
+      const intensity = maxVal > 0 ? v / maxVal : 0;
+      const alpha = v > 0 ? 0.15 + intensity * 0.7 : 0;
+      const textColor = intensity > 0.5 ? '#fff' : '#e2e8f0';
+      html += `<td style="background:rgba(139,92,246,${alpha.toFixed(2)});color:${textColor}">${v > 0 ? v : ''}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  document.getElementById('matrix-region-emo').innerHTML = html;
+}
+
+// ============================================================
+// WHYラダー
+// ============================================================
+const WHY_DATA = {
+  '製品':   { apparent: '製品品質への不満・疑問', functional: '機能・性能の欠陥・改善余地', emotional: '安心・信頼の欠如', value: '安心価値 / 快適価値' },
+  '営業':   { apparent: '購入プロセスへの不満', functional: '情報不足・対応の遅さ', emotional: '買いやすさへの不安', value: '入手価値' },
+  'サービス': { apparent: 'アフターサービスへの不満', functional: 'サービス品質・コスト', emotional: '大切にされていない感', value: '対応価値' },
+  '企業活動': { apparent: '企業姿勢への疑問・期待', functional: '情報開示・透明性不足', emotional: '信頼感の欠如', value: '情報価値 / ブランド価値' },
+  '部品':   { apparent: '部品入手・価格への不満', functional: '供給体制・コスト構造', emotional: '維持コストへの不安', value: '安心価値' },
+  'ＨＴＣ': { apparent: '会員サービスへの不満', functional: '特典・ポイント体系', emotional: '会員としての期待値', value: '情報価値' },
+  '他窓口誘導': { apparent: 'たらい回し感・手続きの煩雑さ', functional: '窓口体制の分散', emotional: '解決できない不安', value: '対応価値' },
+  'その他': { apparent: '多様な顧客ニーズ', functional: '既存カテゴリに収まらない要求', emotional: '対応されない孤立感', value: '情報価値' }
+};
+
+function renderWhyLadder() {
+  const category = document.getElementById('why-select').value;
+  const d = WHY_DATA[category] || WHY_DATA['その他'];
+  document.getElementById('why-ladder').innerHTML = `
+    <div class="why-step">
+      <div class="why-step-label">顕在ニーズ</div>
+      <div class="why-step-value">${d.apparent}</div>
+    </div>
+    <div class="why-step">
+      <div class="why-step-label">機能的原因</div>
+      <div class="why-step-value">${d.functional}</div>
+    </div>
+    <div class="why-step">
+      <div class="why-step-label">感情的不足</div>
+      <div class="why-step-value">${d.emotional}</div>
+    </div>
+    <div class="why-step">
+      <div class="why-step-label">潜在価値</div>
+      <div class="why-step-value">${d.value}</div>
+    </div>
+  `;
+}
+document.getElementById('why-select').addEventListener('change', renderWhyLadder);
+
+// ============================================================
+// 価値転換マップ
+// ============================================================
+const VALUE_MAP = [
+  { emotion: '不安', complaint: '機能・安全への不安・心配', missing: '安心の欠如', idea: '品質保証強化・先行案内コミュニケーション' },
+  { emotion: '怒り', complaint: '対応・品質への強い不満', missing: '信頼の欠如', idea: '品質保証プログラム・再発防止の可視化' },
+  { emotion: '失望', complaint: '期待を下回った体験', missing: '期待充足の欠如', idea: '期待値管理・体験価値のギャップ解消' },
+  { emotion: '喜び', complaint: 'ポジティブ体験（継続強化）', missing: '（維持・拡大）', idea: 'ファンコミュニティ形成・口コミ促進' },
+  { emotion: '要望', complaint: '現状への改善要求', missing: '快適・利便性の欠如', idea: 'ユーザー共創プログラム・機能ロードマップ共有' },
+  { emotion: '意見', complaint: '情報・意見の提供', missing: '関与・共創機会の欠如', idea: '顧客インサイト活用・ユーザーパネル設置' }
+];
+
+function renderValueMap() {
+  document.getElementById('value-map-body').innerHTML = VALUE_MAP.map(v => `
+    <tr>
+      <td><span class="tag tag-emotion">${v.emotion}</span></td>
+      <td>${v.complaint}</td>
+      <td>${v.missing}</td>
+      <td>${v.idea}</td>
+    </tr>
+  `).join('');
+}
+
+// ============================================================
+// 課題管理カード
+// ============================================================
+function populateIssueFilters(data) {
+  populateSelect('issue-filter-cat', [...new Set(data.map(d=>d.category))]);
+  populateSelect('issue-filter-emo', [...new Set(data.map(d=>d.emotion))]);
+  populateSelect('issue-filter-name', [...new Set(data.map(d=>d.productName))]);
+  populateSelect('issue-filter-cust', [...new Set(data.map(d=>d.customerType1))]);
+}
+
+function renderIssues() {
+  const filterCat = document.getElementById('issue-filter-cat').value;
+  const filterEmo = document.getElementById('issue-filter-emo').value;
+  const filterName = document.getElementById('issue-filter-name').value;
+  const filterCust = document.getElementById('issue-filter-cust').value;
+  const filterStatus = document.getElementById('issue-filter-status').value;
+
+  let filtered = allData.filter(d => {
+    if (filterCat && d.category !== filterCat) return false;
+    if (filterEmo && d.emotion !== filterEmo) return false;
+    if (filterName && d.productName !== filterName) return false;
+    if (filterCust && d.customerType1 !== filterCust) return false;
+    if (filterStatus !== '' && d.status !== parseInt(filterStatus)) return false;
+    return true;
+  }).sort((a,b) => b.priorityScore - a.priorityScore);
+
+  const grid = document.getElementById('issue-grid');
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state">該当するデータがありません</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(d => {
+    const preview = d.cleanedContent.substring(0, 100) + (d.cleanedContent.length > 100 ? '...' : '');
+    const badgeClass = d.priorityScore >= 20 ? 'high' : d.priorityScore >= 12 ? 'mid' : '';
+    const statusClass = `tag-status-${d.status}`;
+    return `
+      <div class="issue-card">
+        <div class="issue-card-header">
+          <div class="issue-card-id">${d.caseId}</div>
+          <div class="priority-badge ${badgeClass}">スコア: ${d.priorityScore}</div>
+        </div>
+        <div class="issue-card-name">${d.productName} ${d.modelType ? `/ ${d.modelType}` : ''} ${d.modelYear ? `(${d.modelYear})` : ''}</div>
+        <div class="tag-row">
+          <span class="tag tag-category">${d.category}</span>
+          <span class="tag tag-emotion">${d.emotion}</span>
+          <span class="tag tag-value">${d.latentValue}</span>
+          <span class="tag ${statusClass}">${STATUS_LABELS[d.status]}</span>
+        </div>
+        <div class="issue-content-preview" onclick="showDetailModal(${d.no})">${escHtml(preview)}</div>
+        <div class="issue-card-footer">
+          <button class="status-btn" onclick="cycleStatus(${d.no})">
+            ${d.status < 2 ? '→ ' + STATUS_LABELS[d.status+1] : '↩ 未対応へ'}
+          </button>
+          <input class="dept-input" type="text" placeholder="担当部署" value="${escHtml(d.dept)}"
+            onchange="updateField(${d.no},'dept',this.value)" />
+          <input class="deadline-input" type="date" value="${d.deadline}"
+            onchange="updateField(${d.no},'deadline',this.value)" />
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function cycleStatus(no) {
+  const d = allData.find(d=>d.no===no);
+  if (!d) return;
+  d.status = (d.status + 1) % 3;
+  renderAll();
+}
+
+function updateField(no, field, value) {
+  const d = allData.find(d=>d.no===no);
+  if (d) d[field] = value;
+}
+
+// ============================================================
+// データ一覧テーブル
+// ============================================================
+function populateDLFilters(data) {
+  populateSelect('dl-filter-cat', [...new Set(data.map(d=>d.category))], '内容分類：すべて');
+  populateSelect('dl-filter-emo', [...new Set(data.map(d=>d.emotion))], '感情タグ：すべて');
+  populateSelect('dl-filter-cust', [...new Set(data.map(d=>d.customerType1))], '相談者区分1：すべて');
+}
+
+function renderDataTable() {
+  const searchText = document.getElementById('search-input').value.toLowerCase();
+  const filterCat = document.getElementById('dl-filter-cat').value;
+  const filterEmo = document.getElementById('dl-filter-emo').value;
+  const filterCust = document.getElementById('dl-filter-cust').value;
+
+  let filtered = allData.filter(d => {
+    if (filterCat && d.category !== filterCat) return false;
+    if (filterEmo && d.emotion !== filterEmo) return false;
+    if (filterCust && d.customerType1 !== filterCust) return false;
+    if (searchText) {
+      const haystack = (d.cleanedContent + ' ' + d.productName).toLowerCase();
+      if (!haystack.includes(searchText)) return false;
+    }
+    return true;
+  });
+
+  const tbody = document.getElementById('data-table-body');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-state">該当するデータがありません</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(d => `
+    <tr>
+      <td>${d.no}</td>
+      <td style="font-family:monospace;font-size:11px">${d.caseId}</td>
+      <td><span class="tag tag-category">${d.category}</span></td>
+      <td>${d.contactMethod}</td>
+      <td>${d.productType}</td>
+      <td>${d.productName}</td>
+      <td>${d.modelYear || ''}</td>
+      <td><span class="tag tag-emotion">${d.emotion}</span></td>
+      <td><span class="tag tag-value">${d.latentValue}</span></td>
+      <td>${d.customerType1}</td>
+      <td>${d.region}</td>
+      <td><span class="tag tag-status-${d.status}">${STATUS_LABELS[d.status]}</span></td>
+      <td><button class="detail-btn" onclick="showDetailModal(${d.no})">詳細</button></td>
+    </tr>
+  `).join('');
+}
+
+// ============================================================
+// モーダル
+// ============================================================
+function showDetailModal(no) {
+  const d = allData.find(d=>d.no===no);
+  if (!d) return;
+  document.getElementById('modal-detail-title').textContent = `${d.caseId}｜${d.productName}｜${d.category}`;
+  document.getElementById('modal-detail-content').textContent = d.cleanedContent;
+  document.getElementById('modal-detail').classList.add('open');
+}
+
+function showMatrixModal(category, emotion) {
+  const matches = allData.filter(d => d.category === category && d.emotion === emotion);
+  document.getElementById('modal-matrix-title').textContent = `${category} × ${emotion}（${matches.length}件）`;
+  if (matches.length === 0) {
+    document.getElementById('modal-matrix-content').innerHTML = '<div class="empty-state">該当データなし</div>';
+  } else {
+    let html = `<table class="modal-list-table"><thead><tr>
+      <th>案件ID</th><th>通称名</th><th>潜在価値</th><th>相談者区分</th><th>地区</th><th>内容抜粋</th>
+    </tr></thead><tbody>`;
+    matches.forEach(d => {
+      html += `<tr>
+        <td style="font-family:monospace;font-size:11px">${d.caseId}</td>
+        <td>${d.productName}</td>
+        <td><span class="tag tag-value">${d.latentValue}</span></td>
+        <td>${d.customerType1}</td>
+        <td>${d.region}</td>
+        <td style="cursor:pointer;color:#06b6d4" onclick="closeModal('modal-matrix');showDetailModal(${d.no})">${escHtml(d.cleanedContent.substring(0,60))}…</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    document.getElementById('modal-matrix-content').innerHTML = html;
+  }
+  document.getElementById('modal-matrix').classList.add('open');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// モーダル外クリックで閉じる
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ============================================================
+// ユーティリティ
+// ============================================================
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function populateSelect(id, options, defaultLabel) {
+  const el = document.getElementById(id);
+  const currentVal = el.value;
+  const firstOption = defaultLabel ? `<option value="">${defaultLabel}</option>` : '<option value="">すべて</option>';
+  el.innerHTML = firstOption + options.map(o=>`<option value="${escHtml(o)}">${o}</option>`).join('');
+  if (options.includes(currentVal)) el.value = currentVal;
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ============================================================
+// タブ切り替え
+// ============================================================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ============================================================
+// XLSXファイル読み込み
+// ============================================================
+document.getElementById('file-input').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const workbook = XLSX.read(ev.target.result, { type: 'binary' });
+      // シート「提案要望」を優先、なければ最初のシート
+      const sheetName = workbook.SheetNames.includes('提案要望')
+        ? '提案要望'
+        : workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      // 列マッピング（実際のExcel列名 → 内部フィールド名）
+      const parsed = rows.map((row, i) => ({
+        no:             row['NO.'] || row['NO'] || i + 1,
+        caseId:         String(row['案件管理番号'] || ''),
+        category:       String(row['内容分類'] || ''),
+        contactMethod:  String(row['相談方法'] || ''),
+        productType:    String(row['製品区分'] || ''),
+        productName:    String(row['通称名'] || 'その他'),
+        modelType:      String(row['製品タイプ'] || ''),
+        modelYear:      row['年式'] || '',
+        content:        String(row['相談内容'] || ''),
+        customerType1:  String(row['相談者区分1'] || ''),
+        customerType2:  String(row['相談者区分2'] || ''),
+        region:         String(row['発信地区'] || '')
+      })).filter(d => d.caseId || d.content);
+
+      if (parsed.length === 0) {
+        showToast('データが見つかりませんでした。シート名・列名を確認してください。');
+        return;
+      }
+
+      allData = processData(parsed);
+      renderAll();
+      showToast(`${allData.length}件のデータを読み込みました（シート：${sheetName}）`);
+    } catch(err) {
+      console.error(err);
+      showToast('ファイルの読み込みに失敗しました。');
+    }
+  };
+  reader.readAsBinaryString(file);
+  this.value = ''; // 同じファイルの再選択を可能にする
+});
+
+// ============================================================
+// 全体レンダリング
+// ============================================================
+function renderAll() {
+  const data = allData;
+  renderKPI(data);
+  renderCharts(data);
+  renderHeatmap(data);
+  renderMatrixCatEmo(data);
+  renderMatrixRegionEmo(data);
+  renderWhyLadder();
+  renderValueMap();
+  populateIssueFilters(data);
+  renderIssues();
+  populateDLFilters(data);
+  renderDataTable();
+}
+
+// ============================================================
+// 初期化（サンプルデータ）
+// ============================================================
+allData = processData(SAMPLE_DATA);
+renderAll();
+</script>
+</body>
+</html>
