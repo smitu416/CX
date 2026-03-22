@@ -1,0 +1,29 @@
+# 依存関係
+node_modules/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 環境変数
+.env
+.env.local
+.env.*.local
+
+# ログ
+*.log
+npm-debug.log*
+
+# ビルド成果物（将来的にバンドラー導入時）
+dist/
+build/
+.cache/
